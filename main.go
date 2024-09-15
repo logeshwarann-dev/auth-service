@@ -15,9 +15,11 @@ import (
 )
 
 const (
-	port        = ":50051"
-	secretKey   = "bit$PIl@ni2023" // Replace with your actual secret key
-	tokenExpiry = time.Hour * 24   // Token expiry duration
+	port          = ":50051"
+	secretKey     = "bit$PIl@ni2023" // Replace with your actual secret key
+	tokenExpiry   = time.Hour * 24   // Token expiry duration
+	maxRetries    = 10
+	retryInterval = 5 * time.Second
 )
 
 type AuthServiceServer struct {
@@ -63,16 +65,20 @@ func generateToken(userID int) (string, error) {
 }
 
 func main() {
+	var db *gorm.DB
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
 	// PostgreSQL connection
-	dsn := "host=postgres user=postgres password=postgres dbname=auth_db port=5432 sslmode=disable"
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+	for i := 0; i < maxRetries; i++ {
+		db, err = gorm.Open(postgres.Open("host=postgres user=postgres password=postgres dbname=auth_db port=5432 sslmode=disable"), &gorm.Config{})
+		if err == nil {
+			break
+		}
+		log.Printf("PostgreSQL not ready, retrying in %s... (%d/%d)", retryInterval, i+1, maxRetries)
+		time.Sleep(retryInterval)
 	}
 
 	// Create gRPC server
